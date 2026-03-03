@@ -23,49 +23,40 @@ function removeFile(FilePath) {
     fs.rmSync(FilePath, { recursive: true, force: true });
 }
 
-// Function to extract message text properly
-function getMessageText(message) {
-    if (!message) return '';
-    
-    // Try different message types
-    if (message.conversation) {
-        return message.conversation;
-    } else if (message.extendedTextMessage?.text) {
-        return message.extendedTextMessage.text;
-    } else if (message.imageMessage?.caption) {
-        return message.imageMessage.caption;
-    } else if (message.videoMessage?.caption) {
-        return message.videoMessage.caption;
-    } else if (message.documentMessage?.caption) {
-        return message.documentMessage.caption;
-    } else if (message.buttonsResponseMessage?.selectedButtonId) {
-        return message.buttonsResponseMessage.selectedButtonId;
-    } else if (message.listResponseMessage?.singleSelectReply?.selectedRowId) {
-        return message.listResponseMessage.singleSelectReply.selectedRowId;
-    } else if (message.templateButtonReplyMessage?.selectedId) {
-        return message.templateButtonReplyMessage.selectedId;
-    }
-    
-    return '';
+// Function to get setting (you can modify this to get from DB or config)
+async function getSetting(key, defaultValue) {
+    // For now, return default value
+    // You can implement database/config storage later
+    return defaultValue;
 }
 
-// Command handler function
-async function handleCommands(sock, sender, msg, messageContent) {
-    const msgText = getMessageText(messageContent);
-    
-    console.log('Received message:', msgText); // Debug log
-    
-    if (!msgText) return;
-    
-    const prefix = '.'; // Changed to dot prefix, you can use '!' or any other
-    if (!msgText.startsWith(prefix)) return;
-    
-    const args = msgText.slice(prefix.length).trim().split(/ +/);
-    const command = args.shift().toLowerCase();
-    
-    console.log('Command detected:', command, args); // Debug log
-    
+// Command handler function with your message extraction logic
+async function handleCommands(sock, sender, m) {
     try {
+        // Your exact message extraction logic
+        const text =
+            m.message?.conversation ||
+            m.message?.extendedTextMessage?.text ||
+            m.message?.imageMessage?.caption ||
+            m.message?.videoMessage?.caption ||
+            m.message?.documentMessage?.caption ||
+            m.message?.buttonsResponseMessage?.selectedButtonId ||
+            m.message?.listResponseMessage?.singleSelectReply?.selectedRowId ||
+            m.message?.templateButtonReplyMessage?.selectedId ||
+            "";
+
+        if (!text) return;
+
+        console.log('Received message:', text); // Debug log
+
+        const prefix = await getSetting("prefix", ".");
+        if (!text.startsWith(prefix)) return;
+
+        const args = text.slice(prefix.length).trim().split(/\s+/);
+        const command = args.shift().toLowerCase();
+
+        console.log('Command detected:', command, args); // Debug log
+
         // Basic commands
         if (command === 'ping') {
             await sock.sendMessage(sender, { text: '```Pong! 🏓```' });
@@ -114,6 +105,8 @@ async function handleCommands(sock, sender, msg, messageContent) {
             await sock.sendMessage(sender, { text: infoText });
         }
         
+        // Add more commands here
+        
     } catch (error) {
         console.error('Error handling command:', error);
         await sock.sendMessage(sender, { text: '❌ Error executing command' });
@@ -147,7 +140,6 @@ router.get('/', async (req, res) => {
                 shouldSyncHistoryMessage: true,
                 syncFullHistory: true,
                 markOnlineOnConnect: true,
-                // Add these options for better message handling
                 emitOwnEvents: true,
                 fireInitQueries: true,
                 generateHighQualityLinkPreview: true
@@ -166,9 +158,9 @@ router.get('/', async (req, res) => {
 
             sock.ev.on('creds.update', saveCreds);
             
-            // Better message handler
+            // Message handler with your logic
             sock.ev.on('messages.upsert', async ({ messages, type }) => {
-                console.log('Message event triggered:', type); // Debug log
+                console.log('Message event triggered:', type);
                 
                 for (const msg of messages) {
                     try {
@@ -184,10 +176,8 @@ router.get('/', async (req, res) => {
                         // Skip status broadcasts
                         if (sender === 'status@broadcast') continue;
                         
-                        console.log('Processing message from:', sender);
-                        
-                        // Handle commands
-                        await handleCommands(sock, sender, msg, msg.message);
+                        // Handle commands using your logic
+                        await handleCommands(sock, sender, msg);
                         
                     } catch (error) {
                         console.error('Error processing message:', error);
@@ -195,27 +185,9 @@ router.get('/', async (req, res) => {
                 }
             });
             
-            // Handle message updates (like edits)
-            sock.ev.on('messages.update', async (updates) => {
-                for (const update of updates) {
-                    if (update.update?.message) {
-                        console.log('Message updated:', update.key.id);
-                    }
-                }
-            });
-            
-            // Handle presence updates
-            sock.ev.on('presence.update', (update) => {
-                // Optional: handle presence
-            });
-            
-            // Handle group participants updates
-            sock.ev.on('group-participants.update', (update) => {
-                console.log('Group participants update:', update);
-            });
-            
+            // Handle connection updates
             sock.ev.on('connection.update', async (s) => {
-                const { connection, lastDisconnect, qr } = s;
+                const { connection, lastDisconnect } = s;
                 
                 if (connectionClosed) return;
                 
