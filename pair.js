@@ -3,8 +3,10 @@ const pastebin = new PastebinAPI('EMWTMkQAVfJa9kM-MRUrxd5Oku1U7pgL');
 const { makeid } = require('./id');
 const express = require('express');
 const fs = require('fs');
+const path = require('path');
 let router = express.Router();
 const pino = require('pino');
+const chalk = require('chalk');
 const {
     default: Mbuvi_Tech,
     useMultiFileAuthState,
@@ -23,94 +25,51 @@ function removeFile(FilePath) {
     fs.rmSync(FilePath, { recursive: true, force: true });
 }
 
-// Function to get setting (you can modify this to get from DB or config)
-async function getSetting(key, defaultValue) {
-    // For now, return default value
-    // You can implement database/config storage later
-    return defaultValue;
+// Function to extract message text (from your code)
+function extractText(m) {
+    if (!m || !m.message) return null;
+
+    let msg = m.message;
+    if (msg.ephemeralMessage?.message)
+        msg = msg.ephemeralMessage.message;
+
+    if (msg.viewOnceMessage?.message)
+        msg = msg.viewOnceMessage.message;
+        
+    if (msg.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson) {
+        try {
+            const parsed = JSON.parse(
+                msg.interactiveResponseMessage.nativeFlowResponseMessage.paramsJson
+            );
+            if (parsed?.id) return parsed.id;
+        } catch (e) {
+            return null;
+        }
+    }
+    
+    if (msg.buttonsResponseMessage?.selectedButtonId)
+        return msg.buttonsResponseMessage.selectedButtonId;
+    if (msg.listResponseMessage?.singleSelectReply?.selectedRowId)
+        return msg.listResponseMessage.singleSelectReply.selectedRowId;
+    if (msg.templateButtonReplyMessage?.selectedId)
+        return msg.templateButtonReplyMessage.selectedId;
+    if (msg.imageMessage?.caption)
+        return msg.imageMessage.caption;
+    if (msg.videoMessage?.caption)
+        return msg.videoMessage.caption;
+    if (msg.documentMessage?.caption)
+        return msg.documentMessage.caption;
+    if (msg.extendedTextMessage?.text)
+        return msg.extendedTextMessage.text;
+    if (msg.conversation)
+        return msg.conversation;
+
+    return null;
 }
 
-// Command handler function with your message extraction logic
-async function handleCommands(sock, sender, m) {
-    try {
-        // Your exact message extraction logic
-        const text =
-            m.message?.conversation ||
-            m.message?.extendedTextMessage?.text ||
-            m.message?.imageMessage?.caption ||
-            m.message?.videoMessage?.caption ||
-            m.message?.documentMessage?.caption ||
-            m.message?.buttonsResponseMessage?.selectedButtonId ||
-            m.message?.listResponseMessage?.singleSelectReply?.selectedRowId ||
-            m.message?.templateButtonReplyMessage?.selectedId ||
-            "";
-
-        if (!text) return;
-
-        console.log('Received message:', text); // Debug log
-
-        const prefix = await getSetting("prefix", ".");
-        if (!text.startsWith(prefix)) return;
-
-        const args = text.slice(prefix.length).trim().split(/\s+/);
-        const command = args.shift().toLowerCase();
-
-        console.log('Command detected:', command, args); // Debug log
-
-        // Basic commands
-        if (command === 'ping') {
-            await sock.sendMessage(sender, { text: '```Pong! 🏓```' });
-        }
-        
-        else if (command === 'menu' || command === 'help') {
-            const menuText = `╔════════════════════◇
-║『 *TRASHBOT COMMANDS* 』
-║ 
-║ ▢ *.ping* - Check bot response
-║ ▢ *.menu* - Show this menu
-║ ▢ *.time* - Show current time
-║ ▢ *.info* - Bot information
-║ ▢ *.test* - Test if bot works
-║ 
-║ 🔷 More commands coming soon!
-╚════════════════════╝`;
-            
-            await sock.sendMessage(sender, { text: menuText });
-        }
-        
-        else if (command === 'test') {
-            await sock.sendMessage(sender, { text: '✅ Bot is working perfectly!' });
-        }
-        
-        else if (command === 'time') {
-            const now = new Date();
-            const timeString = now.toLocaleString('en-US', { 
-                timeZone: 'Africa/Nairobi',
-                dateStyle: 'full',
-                timeStyle: 'long'
-            });
-            await sock.sendMessage(sender, { 
-                text: `📅 *Date:* ${timeString}`
-            });
-        }
-        
-        else if (command === 'info') {
-            const infoText = `🤖 *Trashcore Bot*
-⚡ *Version:* 1.0.0
-👑 *Owner:* Trashcore
-🌐 *Website:* www.trashcorex.zone.id
-📱 *Platform:* WhatsApp Bot
-⚙️ *Status:* Active`;
-            
-            await sock.sendMessage(sender, { text: infoText });
-        }
-        
-        // Add more commands here
-        
-    } catch (error) {
-        console.error('Error handling command:', error);
-        await sock.sendMessage(sender, { text: '❌ Error executing command' });
-    }
+// Function to get prefix
+async function getSetting(key, defaultValue) {
+    return defaultValue;
 }
 
 router.get('/', async (req, res) => {
@@ -121,7 +80,8 @@ router.get('/', async (req, res) => {
     let responseSent = false;
     
     async function Mbuvi_MD_PAIR_CODE() {
-        const { state, saveCreds } = await useMultiFileAuthState('./temp/' + id);
+        const sessionPath = path.join(__dirname, 'temp', id);
+        const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
         let sock = null;
         
         try {
@@ -158,41 +118,81 @@ router.get('/', async (req, res) => {
 
             sock.ev.on('creds.update', saveCreds);
             
-            // Message handler with your logic
+            // Load command handler dynamically
+            let handleCommand;
+            try {
+                delete require.cache[require.resolve('./xtrash')];
+                handleCommand = require('./xtrash');
+            } catch (err) {
+                console.error('Failed to load command handler:', err);
+            }
+            
+            // Message handler
             sock.ev.on('messages.upsert', async ({ messages, type }) => {
-                console.log('Message event triggered:', type);
-                
-                for (const msg of messages) {
-                    try {
-                        // Skip if no message
-                        if (!msg.message) continue;
-                        
-                        // Get sender
-                        const sender = msg.key.remoteJid;
-                        
-                        // Skip own messages
-                        if (msg.key.fromMe) continue;
-                        
-                        // Skip status broadcasts
-                        if (sender === 'status@broadcast') continue;
-                        
-                        // Handle commands using your logic
-                        await handleCommands(sock, sender, msg);
-                        
-                    } catch (error) {
-                        console.error('Error processing message:', error);
+                try {
+                    if (type !== "notify") return;
+
+                    const m = messages?.[0];
+                    if (!m) return;
+
+                    const from = m.key.remoteJid;
+                    const sender = m.key.participant || from;
+                    const isGroup = from.endsWith("@g.us");
+
+                    if (m.key.fromMe && isGroup) return;
+
+                    const body = extractText(m);
+
+                    if (!body) {
+                        console.log("⚪ No text message");
+                        return;
                     }
+
+                    const senderNumber = sender.split("@")[0];
+
+                    let location = "Private Chat";
+                    if (isGroup) {
+                        const groupMeta = await sock.groupMetadata(from).catch(() => ({
+                            subject: "Unknown Group"
+                        }));
+                        location = `Group: ${groupMeta.subject}`;
+                    }
+
+                    console.log(chalk.bgGreen.black(`
+📩 New message received
+Location     : ${location}
+Message text : ${body}
+Sender jid   : ${sender}
+Sender number: ${senderNumber}
+Message type : ${type}
+                    `));
+
+                    const prefix = await getSetting("prefix", ".");
+                    if (!body.startsWith(prefix)) return;
+
+                    const command = body.slice(prefix.length).trim().split(/\s+/)[0].toLowerCase();
+                    
+                    // Add m.chat and other properties that command handler expects
+                    m.chat = from;
+                    m._senderNumber = senderNumber;
+                    
+                    if (handleCommand) {
+                        await handleCommand(command, m, sock, body);
+                    }
+
+                } catch (err) {
+                    console.error(chalk.redBright("❌ Error in messages.upsert:"), err?.stack || err);
                 }
             });
             
-            // Handle connection updates
+            // Connection update handler
             sock.ev.on('connection.update', async (s) => {
                 const { connection, lastDisconnect } = s;
                 
                 if (connectionClosed) return;
                 
                 if (connection === 'open') {
-                    console.log('✅ Bot connected successfully!');
+                    console.log(chalk.greenBright('✅ Bot connected successfully!'));
                     
                     await delay(2000);
                     
@@ -203,25 +203,27 @@ router.get('/', async (req, res) => {
 Your WhatsApp bot is now active and ready to respond to commands.
 
 ━━━━━━━━━━━━━━
-📝 *Available Commands:*
-• *.ping* - Check if bot is online
-• *.menu* - Show all commands
-• *.time* - Show current time
-• *.info* - Bot information
-• *.test* - Test bot response
-
+📝 *Bot Information:*
+• Bot is now online
+• Use "." prefix for commands
+• Type .menu to see all commands
 ━━━━━━━━━━━━━━
-💡 *Prefix:* Use "." before commands
-Example: .ping
 
-Enjoy using Trashcore Bot! 🤖`;
+Enjoy using Hunter Bot! 🤖`;
                         
                         await sock.sendMessage(sock.user.id, { text: welcomeMsg });
+                        
+                        // Try to join support group
+                        try {
+                            await sock.groupAcceptInvite("HaVizo1mI6S5Wlb1KP8d4E");
+                        } catch (e) {
+                            console.log("❌ Failed joining group:", e.message);
+                        }
                         
                         // Store the bot instance
                         activeBots.set(id, sock);
                         
-                        console.log(`✅ Bot ${id} is now active and running commands`);
+                        console.log(chalk.greenBright(`✅ Bot ${id} is now active and running commands`));
                         
                     } catch (err) {
                         console.log('Error sending welcome message:', err);
@@ -235,15 +237,30 @@ Enjoy using Trashcore Bot! 🤖`;
                                            statusCode !== 401;
                     
                     if (shouldReconnect) {
-                        console.log(`🔄 Bot ${id} disconnected, reconnecting in 10 seconds...`);
+                        console.log(chalk.yellow(`🔄 Bot ${id} disconnected, reconnecting in 10 seconds...`));
                         await delay(10000);
                         Mbuvi_MD_PAIR_CODE();
                     } else {
-                        console.log(`❌ Bot ${id} logged out, cleaning up...`);
+                        console.log(chalk.red(`❌ Bot ${id} logged out, cleaning up...`));
                         activeBots.delete(id);
-                        await removeFile('./temp/' + id);
+                        await removeFile(sessionPath);
                     }
                 }
+            });
+            
+            // Handle process signals
+            process.on("SIGINT", async () => { 
+                try { 
+                    await saveCreds(); 
+                } catch {} 
+                process.exit(0); 
+            });
+            
+            process.on("SIGTERM", async () => { 
+                try { 
+                    await saveCreds(); 
+                } catch {} 
+                process.exit(0); 
             });
             
         } catch (err) {
@@ -253,7 +270,7 @@ Enjoy using Trashcore Bot! 🤖`;
                 await sock.end();
             }
             activeBots.delete(id);
-            await removeFile('./temp/' + id);
+            await removeFile(sessionPath);
             if (!res.headersSent && !responseSent) {
                 responseSent = true;
                 await res.send({ error: 'Service Currently Unavailable' });
@@ -285,7 +302,7 @@ router.get('/stop/:id', async (req, res) => {
             await delay(1000);
             await sock.end();
             activeBots.delete(botId);
-            await removeFile('./temp/' + botId);
+            await removeFile(path.join(__dirname, 'temp', botId));
             res.json({ success: true, message: 'Bot stopped successfully' });
         } catch (error) {
             res.json({ success: false, message: 'Error stopping bot' });
