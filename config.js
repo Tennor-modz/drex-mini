@@ -10,7 +10,7 @@ module.exports = {
     // 1. CONFIGURATION DE BASE (Session & Database)
     // ===========================================================
     SESSION_ID: process.env.SESSION_ID || "MINI BOT", 
-    MONGODB_URI: process.env.MONGODB_URI || 'mongodb+srv://kaviduinduwara:kavidu2008@cluster0.bqmspdf.mongodb.net/soloBot?retryWrites=true&w=majority&appName=Cluster0',
+    MONGODB_URI: process.env.MONGODB_URI || 'mongodb+srv://giddy:giddy@cluster0.has8sus.mongodb.net/?appName=Cluster0',
     
     // ===========================================================
     // 2. INFORMATIONS DU BOT
@@ -50,7 +50,7 @@ module.exports = {
     WELCOME_IMAGE: process.env.WELCOME_IMAGE || null, 
     GOODBYE_IMAGE: process.env.GOODBYE_IMAGE || null,
     
-    GROUP_INVITE_LINK: process.env.GROUP_INVITE_LINK || 'https://chat.whatsapp.com/E0rMzLcYiBBFxGGEu9RkUR?mode=gi_c',
+    GROUP_INVITE_LINK: process.env.GROUP_INVITE_LINK || 'https://chat.whatsapp.com/GDqImAiZYqh8WifWfzk559?mode=gi_t',
     
     // ===========================================================
     // 6. SÉCURITÉ & ANTI-CALL
